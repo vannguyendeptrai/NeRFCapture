@@ -20,7 +20,7 @@ class ARViewModel : NSObject, ARSessionDelegate, ObservableObject {
     @Published var appState = AppState()
     var session: ARSession? = nil
     var arView: ARView? = nil
-//    let frameSubject = PassthroughSubject<ARFrame, Never>()
+    let frameSubject = PassthroughSubject<ARFrame, Never>()
     var cancellables = Set<AnyCancellable>()
     let datasetWriter: DatasetWriter
     let ddsWriter: DDSWriter
@@ -45,7 +45,7 @@ class ARViewModel : NSObject, ARSessionDelegate, ObservableObject {
             .sink { x in
                 switch x {
                 case .Offline:
-//                    self.appState.stream = false
+                    self.appState.stream = false
                     print("Changed to offline")
                 case .Online:
                     print("Changed to online")
@@ -53,12 +53,15 @@ class ARViewModel : NSObject, ARSessionDelegate, ObservableObject {
             }
             .store(in: &cancellables)
         
-//        frameSubject.throttle(for: 0.5, scheduler: RunLoop.main, latest: true).sink {
-//            f in
-//            if self.appState.stream && self.appState.appMode == .Online {
-//                self.ddsWriter.writeFrameToTopic(frame: f)
-//            }
-//        }.store(in: &cancellables)
+        // JetMax: continuous streaming (the original author's code, re-enabled).
+        // 10 frames/s, sent as a 640-px-wide JPEG via writeStreamFrame, so a
+        // frame is ~40 KB instead of the 8 MB raw frame the Send button sends.
+        frameSubject.throttle(for: 0.1, scheduler: RunLoop.main, latest: true).sink {
+            f in
+            if self.appState.stream && self.appState.appMode == .Online {
+                self.ddsWriter.writeStreamFrame(frame: f)
+            }
+        }.store(in: &cancellables)
     }
     
     
@@ -83,7 +86,7 @@ class ARViewModel : NSObject, ARSessionDelegate, ObservableObject {
         _ session: ARSession,
         didUpdate frame: ARFrame
     ) {
-//        frameSubject.send(frame)
+        frameSubject.send(frame)
     }
     
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
