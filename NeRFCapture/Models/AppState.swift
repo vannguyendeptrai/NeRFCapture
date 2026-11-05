@@ -22,7 +22,7 @@ struct AppState {
     var projectName = ""
     var numFrames = 0
     var supportsDepth = false
-//    var stream = false
+    var stream = false      // JetMax: continuous Online streaming
     
     var ddsPeers: UInt32 = 0
     var ddsReady = false
