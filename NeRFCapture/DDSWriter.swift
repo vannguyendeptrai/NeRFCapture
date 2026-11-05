@@ -7,6 +7,8 @@
 
 import Foundation
 import ARKit
+import CoreImage
+import UIKit
 
 struct DDSConstants {
     static let DDS_PUBLICATION_MATCHED_STATUS: UInt32 = 1 << DDS_PUBLICATION_MATCHED_STATUS_ID.rawValue
@@ -103,6 +105,57 @@ class DDSWriter {
         }
     }
     
+    // JetMax stream frame: same message type, but `image` holds a JPEG
+    // (starts FF D8) of at most streamMaxWidth pixels wide, and the
+    // intrinsics are scaled to that size. Receivers tell it apart from the
+    // raw RGB Send frame because its length != width*height*3.
+    let ciContext = CIContext(options: nil)
+    let streamMaxWidth: CGFloat = 640
+    let streamJpegQuality: CGFloat = 0.6
+
+    func writeStreamFrame(frame: ARFrame) {
+        guard let writer = dds.writer, writer >= 0 else { return }
+        let pb = frame.capturedImage
+        let fullW = CGFloat(CVPixelBufferGetWidth(pb))
+        let fullH = CGFloat(CVPixelBufferGetHeight(pb))
+        let s = min(1.0, streamMaxWidth / fullW)
+        let ci = CIImage(cvPixelBuffer: pb).transformed(by: CGAffineTransform(scaleX: s, y: s))
+        guard let cg = ciContext.createCGImage(ci, from: ci.extent),
+              let jpeg = UIImage(cgImage: cg).jpegData(compressionQuality: streamJpegQuality) else { return }
+        let sx = Float(cg.width) / Float(fullW)
+        let sy = Float(cg.height) / Float(fullH)
+        counter += 1
+        let frameId = UInt32(counter)
+        let pose = tupleFromTransform(frame.camera.transform)
+        let k = frame.camera.intrinsics
+        jpeg.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+            var data = dds_sequence_octet()
+            data._length = UInt32(jpeg.count)
+            data._maximum = UInt32(jpeg.count)
+            data._buffer = UnsafeMutablePointer(mutating: base)
+            let noDepth = dds_sequence_octet()
+            var msg = NeRFCaptureData_NeRFCaptureFrame(
+                id: frameId,
+                timestamp: frame.timestamp,
+                fl_x: k[0, 0] * sx,
+                fl_y: k[1, 1] * sy,
+                cx: k[2, 0] * sx,
+                cy: k[2, 1] * sy,
+                transform_matrix: pose,
+                width: UInt32(cg.width),
+                height: UInt32(cg.height),
+                image: data,
+                has_depth: false,
+                depth_width: 0,
+                depth_height: 0,
+                depth_scale: 1.0,
+                depth_image: noDepth
+            )
+            dds.rc = dds_write(writer, &msg)
+        }
+    }
+
     func writeFrameToTopic(frame: ARFrame) {
         let w = UInt32(frame.camera.imageResolution.width)
         let h = UInt32(frame.camera.imageResolution.height)
