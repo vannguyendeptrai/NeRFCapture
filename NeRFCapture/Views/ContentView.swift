@@ -103,6 +103,9 @@ struct ContentView : View {
                         }
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.capsule)
+                        Toggle("Stream", isOn: $viewModel.appState.stream)
+                            .fixedSize()
+                            .padding(.trailing, 8)
                     }
                     if case .Offline = viewModel.appState.appMode {
                         if viewModel.appState.writerState == .SessionNotStarted {
